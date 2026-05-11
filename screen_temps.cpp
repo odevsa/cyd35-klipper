@@ -1,23 +1,30 @@
 #include "screen_temps.h"
+#include "lang.h"
 #include "ui_theme.h"
+#include "temp_graph.h"
 
-#define TP_LEFT_X    0
-#define TP_RIGHT_X  240
-#define TP_PW       235
-#define TP_LBL_Y   (CONTENT_Y +  8)
-#define TP_TMP_Y   (CONTENT_Y + 26)
-#define TP_ADJ_Y   (CONTENT_Y + 80)
-#define TP_PRE_Y   (CONTENT_Y + 135)
-#define TP_ADJ_H    44
-#define TP_PRE_H    38
-#define TP_MINUS_W  55
-#define TP_PLUS_W   55
-#define TP_VAL_W   (TP_PW - TP_MINUS_W - TP_PLUS_W - 6)
-#define TP_PR_W    (TP_PW / 4)
+static const int DIVIDER_X =                CONTENT_CENTER_X;
+static const int TOP_INNER_Y =              STATUS_BAR_H + PANEL_SPACING;
+static const int BOTTOM_INNER_Y =           NAV_BAR_Y - (BUTTON_LARGE_H * 2) - (PANEL_SPACING * 4);
+static const int HALF_BOX_W =               DIVIDER_X - (PANEL_SPACING * 2);
+static const int HALF_BOX_H =               DIVIDER_CENTER_Y - STATUS_BAR_H - (PANEL_SPACING * 2);
+static const int BOX_H =                    CONTENT_H - (PANEL_SPACING * 2);
+static const int LEFT_CONTENT_X =           PANEL_SPACING;
+static const int RIGHT_CONTENT_X =          DIVIDER_X + PANEL_SPACING;
+static const int RIGHT_CONTENT_FINAL_X =    SCREEN_W - PANEL_SPACING;
+static const int TARGET_BUTTON_W =          (DIVIDER_X - (PANEL_SPACING * 5)) / 4;
+static const int TARGET_VALUE_W =           (TARGET_BUTTON_W * 2) + PANEL_SPACING;
+static const int TEMPERATURE_HISTORIC_W =   140;
+static const int TEMPERATURE_HISTORIC_H =   BOTTOM_INNER_Y - PANEL_SPACING - TOP_INNER_Y;
+static const int MATERIAL_PRESET_Y =        BOTTOM_INNER_Y + BUTTON_LARGE_H + PANEL_SPACING;
 
-static bool _inBox(int px, int py, int x, int y, int w, int h) {
-    return px >= x && px < x + w && py >= y && py < y + h;
-}
+static const int TEMP_LABEL_Y =             TOP_INNER_Y + 7;
+static const int TEMP_VALUE_Y =             TOP_INNER_Y + (TEMPERATURE_HISTORIC_H / 2) - 20;
+static const int TEMP_UNIT_Y =              TOP_INNER_Y + TEMPERATURE_HISTORIC_H - 18;
+
+// Pre-computed graph X positions: right-aligned within each column.
+static const int LEFT_GRAPH_X  =            DIVIDER_X - TEMPERATURE_HISTORIC_W - PANEL_SPACING;
+static const int RIGHT_GRAPH_X =            SCREEN_W - TEMPERATURE_HISTORIC_W - PANEL_SPACING;
 
 static bool s_initialized = false;
 
@@ -35,26 +42,27 @@ static struct {
 // Static layout – drawn once per activation
 // ─────────────────────────────────────────────────────
 static void drawStaticPanel(int ox, const char* label) {
-    tft.fillRect(ox, CONTENT_Y, TP_PW, CONTENT_H, COLOR_SURFACE);
     tft.setTextFont(2);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
-    tft.drawString(label, ox + 6, TP_LBL_Y + 8);
+    tft.drawString(label, ox, TEMP_LABEL_Y);
 
     tft.setTextFont(2);
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
-    tft.setCursor(ox + 6, TP_TMP_Y + 50);
+    tft.setCursor(ox, TEMP_UNIT_Y);
     tft.print("C");
 
-    drawButton(ox + 3,
-               TP_ADJ_Y, TP_MINUS_W, TP_ADJ_H, "- 5", COLOR_BG, COLOR_TEXT, 2);
-    drawButton(ox + 3 + TP_MINUS_W + 3 + TP_VAL_W + 3,
-               TP_ADJ_Y, TP_PLUS_W, TP_ADJ_H, "+ 5", COLOR_BG, COLOR_TEXT, 2);
+    drawButton(ox, BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H, "- 5", COLOR_ACCENT, COLOR_BG, 2);
+    drawButton(ox + TARGET_BUTTON_W + TARGET_VALUE_W + (PANEL_SPACING * 2),
+               BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H, "+ 5", COLOR_ACCENT, COLOR_BG, 2);
 
-    const char* labels[4] = { "PLA", "PETG", "ABS", "OFF" };
+    const char* labels[4] = { "PLA", "PETG", "ABS", L.PRESET_OFF };
+
+    int currentPosition = ox;
     for (int i = 0; i < 4; i++) {
-        drawButton(ox + 3 + i * TP_PR_W, TP_PRE_Y,
-                   TP_PR_W - 3, TP_PRE_H, labels[i], COLOR_BG, COLOR_TEXT, 2);
+        drawButton(currentPosition, MATERIAL_PRESET_Y,
+                   TARGET_BUTTON_W, BUTTON_LARGE_H, labels[i], COLOR_TEXT_DIM, COLOR_SURFACE, 2);
+        currentPosition += TARGET_BUTTON_W + PANEL_SPACING;
     }
 }
 
@@ -62,35 +70,43 @@ static void drawStaticPanel(int ox, const char* label) {
 // Dynamic – draws a single panel's changing values only
 // if they differ from the cache.
 // ─────────────────────────────────────────────────────
-static void drawDynamicPanel(int ox, float current, float target,
-                              int& prevCurrent, int& prevTarget, bool& prevAtTemp) {
+static void drawDynamicPanel(int ox, int graphX, float current, float target,
+                              int& prevCurrent, int& prevTarget, bool& prevAtTemp,
+                              TempGraph& graph, uint16_t lineCol, uint16_t tgtCol) {
     int  curI  = (int)current;
     int  tgtI  = (int)target;
     bool atTemp = (current >= target - 2 && target > 0);
     char buf[12];
-
+    
+    // ── Current temperature ──────────────────────────
     if (curI != prevCurrent || atTemp != prevAtTemp) {
         snprintf(buf, sizeof(buf), "%3d", curI);
         tft.setTextFont(6);
         tft.setTextColor(atTemp ? COLOR_SUCCESS : COLOR_TEXT, COLOR_SURFACE);
-        tft.setCursor(ox + 6, TP_TMP_Y);
+        tft.setCursor(ox, TEMP_VALUE_Y);
         tft.print(buf);
         prevCurrent = curI;
         prevAtTemp  = atTemp;
     }
 
+    // ── Target temperature ───────────────────────────
     if (tgtI != prevTarget) {
         // Redraw target value box only
-        int bx = ox + 3 + TP_MINUS_W + 3;
-        tft.fillRoundRect(bx, TP_ADJ_Y, TP_VAL_W, TP_ADJ_H, 4, COLOR_BG);
-        tft.drawRoundRect(bx, TP_ADJ_Y, TP_VAL_W, TP_ADJ_H, 4, COLOR_DIVIDER);
+        int bx = ox + TARGET_BUTTON_W + PANEL_SPACING;
+        tft.fillRoundRect(bx, BOTTOM_INNER_Y, TARGET_VALUE_W, BUTTON_LARGE_H, PANEL_ROUNDED, COLOR_BG);
+        tft.drawRoundRect(bx, BOTTOM_INNER_Y, TARGET_VALUE_W, BUTTON_LARGE_H, PANEL_ROUNDED, COLOR_DIVIDER);
         snprintf(buf, sizeof(buf), "%3d C", tgtI);
         tft.setTextFont(4);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(COLOR_TEXT, COLOR_BG);
-        tft.drawString(buf, bx + TP_VAL_W / 2, TP_ADJ_Y + TP_ADJ_H / 2);
+        tft.drawString(buf, bx + TARGET_VALUE_W / 2, BOTTOM_INNER_Y + BUTTON_LARGE_H / 2 + 3);
         prevTarget = tgtI;
     }
+
+    // ── Temperature history ──────────────────────────
+    graph.push(current, target);
+    graph.draw(graphX, TOP_INNER_Y,
+            TEMPERATURE_HISTORIC_W, TEMPERATURE_HISTORIC_H, lineCol, tgtCol);
 }
 
 // ─────────────────────────────────────────────────────
@@ -106,20 +122,24 @@ void resetInitialized() {
     s_prev.bedTemp        = -9999;
     s_prev.bedTarget      = -9999;
     s_prev.bedAtTemp      = false;
+    // g_hotendGraph and g_bedGraph are global – history is preserved across screen switches.
 }
 
 void draw(const PrinterState& state) {
     if (!s_initialized) {
-        tft.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_BG);
-        tft.drawFastVLine(TP_RIGHT_X - 1, CONTENT_Y, CONTENT_H, COLOR_DIVIDER);
-        drawStaticPanel(TP_LEFT_X,  "HOTEND");
-        drawStaticPanel(TP_RIGHT_X, "BED");
+        tft.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_SURFACE);
+        tft.drawFastVLine(SCREEN_W / 2, CONTENT_Y, CONTENT_H, COLOR_DIVIDER);
+        drawStaticPanel(LEFT_CONTENT_X,  L.LBL_HOTEND);
+        drawStaticPanel(RIGHT_CONTENT_X, L.LBL_BED);
         s_initialized = true;
     }
-    drawDynamicPanel(TP_LEFT_X,  state.extruderTemp, state.extruderTarget,
-                     s_prev.extruderTemp, s_prev.extruderTarget, s_prev.extruderAtTemp);
-    drawDynamicPanel(TP_RIGHT_X, state.bedTemp,       state.bedTarget,
-                     s_prev.bedTemp,      s_prev.bedTarget,      s_prev.bedAtTemp);
+
+    drawDynamicPanel(LEFT_CONTENT_X,  LEFT_GRAPH_X,  state.extruderTemp, state.extruderTarget,
+                     s_prev.extruderTemp, s_prev.extruderTarget, s_prev.extruderAtTemp,
+                     g_hotendGraph, TGRAPH_HOT_LINE, TGRAPH_HOT_TGT);
+    drawDynamicPanel(RIGHT_CONTENT_X, RIGHT_GRAPH_X, state.bedTemp,       state.bedTarget,
+                     s_prev.bedTemp,      s_prev.bedTarget,      s_prev.bedAtTemp,
+                     g_bedGraph, TGRAPH_BED_LINE, TGRAPH_BED_TGT);
 }
 
 ScreenID handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client) {
@@ -132,24 +152,33 @@ ScreenID handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client)
         client.sendGCode(cmd);
     };
 
-    if (x < TP_RIGHT_X) {
-        if (_inBox(x, y, TP_LEFT_X + 3, TP_ADJ_Y, TP_MINUS_W, TP_ADJ_H)) {
-            int t = max(0, (int)state.extruderTarget - 5);
+    auto adjustTemp = [](int target, int current, int delta, int minVal, int maxVal) -> int {
+        int base = (target > 0) ? target : (int)(round((float)current / 5.0f) * 5);
+        return max(minVal, min(maxVal, base + delta));
+    };
+
+    // ── Left panel buttons targets ───────────────────
+    if (x < RIGHT_CONTENT_X) {
+        int startX = LEFT_CONTENT_X;
+        if (inRect(x, y, startX, BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
+            int t = adjustTemp((int)state.extruderTarget, (int)state.extruderTemp, -5, 0, 300);
             state.extruderTarget = t;
             char cmd[32]; snprintf(cmd, sizeof(cmd), "M104 S%d", t);
             client.sendGCode(cmd);
             return ScreenID::TEMPS;
         }
-        int plusX = TP_LEFT_X + 3 + TP_MINUS_W + 3 + TP_VAL_W + 3;
-        if (_inBox(x, y, plusX, TP_ADJ_Y, TP_PLUS_W, TP_ADJ_H)) {
-            int t = min(300, (int)state.extruderTarget + 5);
+        // Hotend plus button
+        int plusX = startX + TARGET_BUTTON_W + PANEL_SPACING + TARGET_VALUE_W + PANEL_SPACING;
+        if (inRect(x, y, plusX, BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
+            int t = adjustTemp((int)state.extruderTarget, (int)state.extruderTemp, +5, 0, 300);
             state.extruderTarget = t;
             char cmd[32]; snprintf(cmd, sizeof(cmd), "M104 S%d", t);
             client.sendGCode(cmd);
             return ScreenID::TEMPS;
         }
         for (int i = 0; i < 4; i++) {
-            if (_inBox(x, y, TP_LEFT_X + 3 + i * TP_PR_W, TP_PRE_Y, TP_PR_W - 3, TP_PRE_H)) {
+            int presetX = startX + (i * (TARGET_BUTTON_W + PANEL_SPACING));
+            if (inRect(x, y, presetX, MATERIAL_PRESET_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
                 state.extruderTarget = extruderPresets[i];
                 state.bedTarget      = bedPresets[i];
                 sendBoth(extruderPresets[i], bedPresets[i]);
@@ -158,25 +187,29 @@ ScreenID handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client)
         }
     }
 
-    if (x >= TP_RIGHT_X) {
-        int ox = TP_RIGHT_X;
-        if (_inBox(x, y, ox + 3, TP_ADJ_Y, TP_MINUS_W, TP_ADJ_H)) {
-            int t = max(0, (int)state.bedTarget - 5);
+    if (x >= RIGHT_CONTENT_X) {
+        // Bed minus button
+        int startX = RIGHT_CONTENT_X;
+        if (inRect(x, y, startX, BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
+            int t = adjustTemp((int)state.bedTarget, (int)state.bedTemp, -5, 0, 130);
             state.bedTarget = t;
             char cmd[32]; snprintf(cmd, sizeof(cmd), "M140 S%d", t);
             client.sendGCode(cmd);
             return ScreenID::TEMPS;
         }
-        int plusX = ox + 3 + TP_MINUS_W + 3 + TP_VAL_W + 3;
-        if (_inBox(x, y, plusX, TP_ADJ_Y, TP_PLUS_W, TP_ADJ_H)) {
-            int t = min(130, (int)state.bedTarget + 5);
+        // Bed plus button
+        int plusX = startX + TARGET_BUTTON_W + PANEL_SPACING + TARGET_VALUE_W + PANEL_SPACING;
+        if (inRect(x, y, plusX, BOTTOM_INNER_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
+            int t = adjustTemp((int)state.bedTarget, (int)state.bedTemp, +5, 0, 130);
             state.bedTarget = t;
             char cmd[32]; snprintf(cmd, sizeof(cmd), "M140 S%d", t);
             client.sendGCode(cmd);
             return ScreenID::TEMPS;
         }
+        // Bed preset buttons
         for (int i = 0; i < 4; i++) {
-            if (_inBox(x, y, ox + 3 + i * TP_PR_W, TP_PRE_Y, TP_PR_W - 3, TP_PRE_H)) {
+            int presetX = startX + (i * (TARGET_BUTTON_W + PANEL_SPACING));
+            if (inRect(x, y, presetX, MATERIAL_PRESET_Y, TARGET_BUTTON_W, BUTTON_LARGE_H)) {
                 state.bedTarget      = bedPresets[i];
                 state.extruderTarget = extruderPresets[i];
                 sendBoth(extruderPresets[i], bedPresets[i]);
@@ -188,4 +221,4 @@ ScreenID handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client)
     return ScreenID::TEMPS;
 }
 
-} // namespace ScreenTemps
+}

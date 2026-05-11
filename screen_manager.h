@@ -9,7 +9,8 @@ enum class ScreenID : uint8_t {
     HOME = 0,
     PRINT,
     TEMPS,
-    MOVE
+    MOVE,
+    FILES    // file-browser overlay
 };
 
 // ─────────────────────────────────────────────────────
@@ -26,6 +27,9 @@ public:
     // Call from loop() on touch event
     void handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client);
 
+    // Call from loop() when finger is lifted (enables tap-to-open semantics)
+    void handleRelease(PrinterState& state, MoonrakerClient& client);
+
     // Force a full redraw on the next draw() call
     void invalidate();
 
@@ -36,8 +40,10 @@ private:
     bool          _contentDirty = true;
     bool          _navDirty     = true;
     // Status bar cache
-    PrinterStatus _prevStatus    = PrinterStatus::DISCONNECTED;
-    bool          _prevConnected = false;
+    PrinterStatus _prevStatus   = PrinterStatus::DISCONNECTED;
+    // Offline overlay state
+    bool          _offline             = false;
+    ScreenID      _screenBeforeOffline = ScreenID::HOME;
 
     void _switchTo(ScreenID id);
     void _drawStatusBar(const PrinterState& state);

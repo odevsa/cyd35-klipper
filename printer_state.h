@@ -55,4 +55,9 @@ struct PrinterState {
 
     // Display message from Klipper
     char message[80] = "";
+
+    // Thumbnail URL for the current print job.
+    // Populated by MoonrakerClient::update() when filename changes.
+    // Empty string means no thumbnail is available.
+    char thumbnailPath[160] = "";
 };

@@ -1,24 +1,42 @@
 #include "screen_home.h"
+#include "screen_files.h"
+#include "lang.h"
+#include "thumbnail.h"
 #include "ui_theme.h"
+#include "temp_graph.h"
 
-static const int DIVIDER_X  = 234;
-static const int PANEL_PAD  =   8;
-static const int LBL_HOTEND_Y = 38;
-static const int TMP_HOTEND_Y = 54;
-static const int TGT_HOTEND_Y = 103;
-static const int SEP_Y        = 143;
-static const int LBL_BED_Y    = 158;
-static const int TMP_BED_Y    = 174;
-static const int TGT_BED_Y    = 223;
-static const int FAN_Y        = 243;
-static const int RP_X = 240;
-static const int RP_W = 235;
-static const int RP_XC = RP_X + RP_W / 2;
-static const int RP_XF = 470;
-static const int RB_Y = 30;
-static const int RB_W = 110;
-static const int RF_X = RP_X + RB_W + 15;
-static const int RB_H = 26;
+static const int TOP_INNER_Y =              STATUS_BAR_H + PANEL_SPACING;
+static const int BOTTOM_INNER_Y =           DIVIDER_CENTER_Y + PANEL_SPACING;
+static const int BOTTOM_CENTER_Y =          (NAV_BAR_Y - DIVIDER_CENTER_Y) / 2;
+static const int FAN_X =                    CONTENT_CENTER_X + PANEL_SPACING;
+static const int FAN_Y =                    NAV_BAR_Y - PANEL_SPACING - 18;
+static const int HALF_BOX_W =               CONTENT_CENTER_X - (PANEL_SPACING * 2);
+static const int HALF_BOX_H =               DIVIDER_CENTER_Y - STATUS_BAR_H - (PANEL_SPACING * 2);
+static const int RIGHT_CONTENT_X =          CONTENT_CENTER_X + PANEL_SPACING;
+static const int RIGHT_CONTENT_CENTER_X =   CONTENT_CENTER_X + (CONTENT_CENTER_X / 2);
+static const int RIGHT_CONTENT_FINAL_X =    SCREEN_W - PANEL_SPACING;
+static const int COLUMN_HALF_BOX_W =        (HALF_BOX_W / 2) - PANEL_SPACING;
+
+static const int HOTEND_LABEL_Y =           TOP_INNER_Y + 7;
+static const int HOTEND_TEMP_Y =            TOP_INNER_Y + (HALF_BOX_H / 2) - 20;
+static const int HOTEND_TARGET_Y =          DIVIDER_CENTER_Y - PANEL_SPACING - 18;
+static const int BED_LABEL_Y =              BOTTOM_INNER_Y + 7;
+static const int BED_TEMP_Y =               BOTTOM_INNER_Y + (HALF_BOX_H / 2) - 20;
+static const int BED_TARGET_Y =             NAV_BAR_Y - PANEL_SPACING - 18;
+
+static const int TEMPERATURE_HISTORIC_X =   100;
+static const int TEMPERATURE_HISTORIC_W =   (CONTENT_CENTER_X - TEMPERATURE_HISTORIC_X - PANEL_SPACING);
+
+static const int PROGRESS_BAR_Y =           TOP_INNER_Y + HALF_BOX_H;
+static const int PROGRESS_BAR_H =           23;
+static const int FILENAME_Y =               PROGRESS_BAR_Y + PROGRESS_BAR_H + 10;
+static const int STATUS_LABEL_Y =           FILENAME_Y + 26;
+static const int STATUS_VALUE_Y =           STATUS_LABEL_Y + 18;
+
+// Button bounding boxes
+static const struct { int x, y, w, h; } BTN_RESTART = {
+    SCREEN_W - COLUMN_HALF_BOX_W - PANEL_SPACING,  NAV_BAR_Y - BUTTON_SMALL_H - PANEL_SPACING, COLUMN_HALF_BOX_W, BUTTON_SMALL_H 
+};
 
 static bool s_initialized = false;
 
@@ -45,137 +63,121 @@ static struct {
     int           printDuration  = -1;
     int           remaining      = -1;
     long          posZ100        = -999999; // posZ*100 as long
+    char          thumbFilename[80] = "\x01";
+    bool          thumbShown        = false;
 } s_prev;
 
 static void drawStaticLayout() {
-    tft.fillRect(0, CONTENT_Y, DIVIDER_X, CONTENT_H, COLOR_SURFACE);
-    tft.fillRect(DIVIDER_X + 1, CONTENT_Y,
-                 SCREEN_W - DIVIDER_X - 1, CONTENT_H, COLOR_SURFACE);
-    tft.drawFastVLine(DIVIDER_X, CONTENT_Y, CONTENT_H, COLOR_DIVIDER);
+    tft.fillRect(0, CONTENT_Y, SCREEN_W, CONTENT_H, COLOR_SURFACE);
+    tft.drawFastVLine(CONTENT_CENTER_X, CONTENT_Y, CONTENT_H, COLOR_DIVIDER);
+    tft.drawFastHLine(PANEL_SPACING, DIVIDER_CENTER_Y, CONTENT_CENTER_X - (PANEL_SPACING * 2), COLOR_DIVIDER);
 
     tft.setTextFont(2);
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
-    tft.drawString("HOTEND", PANEL_PAD, LBL_HOTEND_Y);
-    tft.drawFastHLine(4, SEP_Y, DIVIDER_X - 8, COLOR_DIVIDER);
-    tft.drawString("BED", PANEL_PAD, LBL_BED_Y);
+    tft.drawString(L.LBL_HOTEND, PANEL_SPACING, HOTEND_LABEL_Y);
+    tft.drawString(L.LBL_BED, PANEL_SPACING, BED_LABEL_Y);
 
     // ── Firmware Restart ─────────────────────────────
-    tft.fillRoundRect(RF_X, RB_Y, RB_W, RB_H, 5, COLOR_ERROR);
-    tft.setTextFont(2);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(COLOR_TEXT, COLOR_ERROR);
-    tft.drawString("RESTART", RF_X + RB_W / 2, RB_Y + 13);
-    
+    drawButton(BTN_RESTART.x, BTN_RESTART.y, BTN_RESTART.w, BTN_RESTART.h, L.BTN_RESTART, COLOR_ERROR, COLOR_TEXT, 2);
+
     // ── Info ─────────────────────────────────────────
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
     tft.setTextDatum(ML_DATUM);
-    tft.drawString("ELAPSED",   RP_X, 235);
+    tft.drawString(L.LBL_ELAPSED,   RIGHT_CONTENT_X, STATUS_LABEL_Y);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("REMAINING", RP_XC, 235);
+    tft.drawString(L.LBL_REMAINING, RIGHT_CONTENT_CENTER_X, STATUS_LABEL_Y);
     tft.setTextDatum(MR_DATUM);
-    tft.drawString("HEIGHT", RP_XF, 235);
+    tft.drawString(L.LBL_HEIGHT, RIGHT_CONTENT_FINAL_X, STATUS_LABEL_Y);
 
 }
 
 static void drawDynamic(const PrinterState& state) {
     char buf[32];
+    int TEMP_LIMIT_X = TEMPERATURE_HISTORIC_X - (PANEL_SPACING * 2);
 
     // ── Hotend temperature ───────────────────────────
     int   extI   = (int)state.extruderTemp;
-    int   extTgt = (int)state.extruderTarget;
-    bool  extAt  = (state.extruderTemp >= state.extruderTarget - 2 &&
-                    state.extruderTarget > 0);
+    bool  extAt  = (state.extruderTemp >= state.extruderTarget - 2 && state.extruderTarget > 0);
     if (extI != s_prev.extruderTemp || extAt != s_prev.extruderAtTemp) {
         snprintf(buf, sizeof(buf), "%3d", extI);
+        tft.fillRect(PANEL_SPACING, HOTEND_TEMP_Y - 1, TEMP_LIMIT_X, 49, COLOR_SURFACE);
         tft.setTextFont(6);
         tft.setTextColor(extAt ? COLOR_SUCCESS : COLOR_TEXT, COLOR_SURFACE);
-        tft.setCursor(PANEL_PAD, TMP_HOTEND_Y);
+        tft.setCursor(PANEL_SPACING, HOTEND_TEMP_Y);
         tft.print(buf);
         s_prev.extruderTemp   = extI;
         s_prev.extruderAtTemp = extAt;
     }
+
+    int   extTgt = (int)state.extruderTarget;
     if (extTgt != s_prev.extruderTarget) {
         snprintf(buf, sizeof(buf), "/%3d C ", extTgt);
-        tft.fillRect(PANEL_PAD, TGT_HOTEND_Y - 1, DIVIDER_X - PANEL_PAD - 4, 20, COLOR_SURFACE);
+        tft.fillRect(PANEL_SPACING, HOTEND_TARGET_Y - 1, TEMP_LIMIT_X, 18, COLOR_SURFACE);
         tft.setTextFont(2);
         tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
-        tft.setCursor(PANEL_PAD, TGT_HOTEND_Y);
+        tft.setCursor(PANEL_SPACING, HOTEND_TARGET_Y);
         tft.print(buf);
         s_prev.extruderTarget = extTgt;
     }
 
+    // ── Hotend historic ──────────────────────────────
+    g_hotendGraph.push((float)extI, (float)extTgt);
+    g_hotendGraph.draw(TEMPERATURE_HISTORIC_X, TOP_INNER_Y, TEMPERATURE_HISTORIC_W, HALF_BOX_H, TGRAPH_HOT_LINE, TGRAPH_HOT_TGT);
+
     // ── Bed temperature ──────────────────────────────
     int  bedI   = (int)state.bedTemp;
-    int  bedTgt = (int)state.bedTarget;
-    bool bedAt  = (state.bedTemp >= state.bedTarget - 2 &&
-                   state.bedTarget > 0);
+    bool bedAt  = (state.bedTemp >= state.bedTarget - 2 && state.bedTarget > 0);
     if (bedI != s_prev.bedTemp || bedAt != s_prev.bedAtTemp) {
         snprintf(buf, sizeof(buf), "%3d", bedI);
+        tft.fillRect(PANEL_SPACING, BED_TEMP_Y - 1, TEMP_LIMIT_X, 50, COLOR_SURFACE);
         tft.setTextFont(6);
         tft.setTextColor(bedAt ? COLOR_SUCCESS : COLOR_TEXT, COLOR_SURFACE);
-        tft.setCursor(PANEL_PAD, TMP_BED_Y);
+        tft.setCursor(PANEL_SPACING, BED_TEMP_Y);
         tft.print(buf);
         s_prev.bedTemp   = bedI;
         s_prev.bedAtTemp = bedAt;
     }
+    
+    int  bedTgt = (int)state.bedTarget;
     if (bedTgt != s_prev.bedTarget) {
         snprintf(buf, sizeof(buf), "/%3d C ", bedTgt);
-        tft.fillRect(PANEL_PAD, TGT_BED_Y - 1, DIVIDER_X - PANEL_PAD - 4, 20, COLOR_SURFACE);
+        tft.fillRect(PANEL_SPACING, BED_TARGET_Y - 1, TEMP_LIMIT_X, 18, COLOR_SURFACE);
         tft.setTextFont(2);
         tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
-        tft.setCursor(PANEL_PAD, TGT_BED_Y);
+        tft.setCursor(PANEL_SPACING, BED_TARGET_Y);
         tft.print(buf);
         s_prev.bedTarget = bedTgt;
     }
 
-    // ── Fan ─────────────────────────────────────────
-    int fanPct = (int)(state.fanSpeed * 100);
-    if (fanPct != s_prev.fanPct) {
-        snprintf(buf, sizeof(buf), "FAN %3d%%", fanPct);
-        tft.fillRect(PANEL_PAD, FAN_Y - 1, DIVIDER_X - PANEL_PAD - 4, 20, COLOR_SURFACE);
-        tft.setTextFont(2);
-        tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
-        tft.setCursor(PANEL_PAD, FAN_Y);
-        tft.print(buf);
-        s_prev.fanPct = fanPct;
-    }
+    // ── Bed historic ─────────────────────────────────
+    g_bedGraph.push((float)bedI, (float)bedTgt);
+    g_bedGraph.draw(TEMPERATURE_HISTORIC_X, BOTTOM_INNER_Y, TEMPERATURE_HISTORIC_W, HALF_BOX_H, TGRAPH_BED_LINE, TGRAPH_BED_TGT);
 
-    // ── Status badge ────────────────────────────────
-    if (state.status != s_prev.status) {
-        uint16_t badgeColor = statusColor(state.status);
-        tft.fillRoundRect(RP_X, RB_Y, RB_W, RB_H, 5, badgeColor);
+    // ── Progress bar + percentage ─────────────────────
+    int progPer10 = (int)(state.progress * 1000.0f); // %.1f precision
+    if (progPer10 != s_prev.progressPer10) {
+        drawProgressBar(RIGHT_CONTENT_X, PROGRESS_BAR_Y, HALF_BOX_W, PROGRESS_BAR_H, state.progress,
+            COLOR_ACCENT, COLOR_BG);
+        snprintf(buf, sizeof(buf), "%5.1f%%", state.progress * 100.0f);
         tft.setTextFont(2);
         tft.setTextDatum(MC_DATUM);
-        tft.setTextColor(COLOR_BG, badgeColor);
-        tft.drawString(statusLabel(state.status),
-                       RP_X + RB_W / 2, RB_Y + 13);
-        s_prev.status = state.status;
+        tft.setTextColor(COLOR_TEXT);
+        tft.drawString(buf, RIGHT_CONTENT_CENTER_X, PROGRESS_BAR_Y + 11);
+        tft.drawString(buf, RIGHT_CONTENT_CENTER_X + 1, PROGRESS_BAR_Y + 11);
+        s_prev.progressPer10 = progPer10;
     }
 
     // ── Filename ─────────────────────────────────────
     if (strncmp(state.filename, s_prev.filename, sizeof(s_prev.filename)) != 0) {
         char fname[28];
-        truncateFilename(state.filename[0] ? state.filename : "No File", fname, 26);
-        tft.fillRect(RP_X, 182, RP_W, 16, COLOR_SURFACE);
+        truncateFilename(state.filename[0] ? state.filename : L.NO_FILE, fname, 26);
+        tft.fillRect(RIGHT_CONTENT_X, FILENAME_Y-1, HALF_BOX_W, 18, COLOR_SURFACE);
         tft.setTextFont(2);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(state.filename[0] ? COLOR_TEXT : COLOR_TEXT_DIM, COLOR_SURFACE);
-        tft.drawString(fname, RP_XC, 190);
+        tft.drawString(fname, RIGHT_CONTENT_CENTER_X, FILENAME_Y);
         strlcpy(s_prev.filename, state.filename, sizeof(s_prev.filename));
-    }
-
-    // ── Progress bar + percentage ─────────────────────
-    int progPer10 = (int)(state.progress * 1000.0f); // %.1f precision
-    if (progPer10 != s_prev.progressPer10) {
-        drawProgressBar(RP_X, 200, RP_W, 21, state.progress,
-                        COLOR_ACCENT, COLOR_BG);
-        snprintf(buf, sizeof(buf), "%5.1f%%", state.progress * 100.0f);
-        tft.setTextFont(2);
-        tft.setTextDatum(MC_DATUM);
-        tft.setTextColor(COLOR_TEXT);
-        tft.drawString(buf, RP_XC, 210);
-        s_prev.progressPer10 = progPer10;
     }
 
     // ── Elapsed time (updates every second) ──────────
@@ -186,13 +188,13 @@ static void drawDynamic(const PrinterState& state) {
         tft.setTextFont(2);
         tft.setTextDatum(ML_DATUM);
         tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
-        tft.drawString(tbuf, RP_X, 250);
+        tft.drawString(tbuf, RIGHT_CONTENT_X, STATUS_VALUE_Y);
         s_prev.printDuration = state.printDuration;
     }
-
+    
     // ── Remaining time ────────────────────────────────
     int rem = (state.totalDuration > state.printDuration)
-              ? state.totalDuration - state.printDuration : 0;
+    ? state.totalDuration - state.printDuration : 0;
     if (rem != s_prev.remaining) {
         String eta = (rem > 0) ? formatTime(rem) : "--";
         char tbuf[12];
@@ -200,10 +202,10 @@ static void drawDynamic(const PrinterState& state) {
         tft.setTextFont(2);
         tft.setTextDatum(MC_DATUM);
         tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
-        tft.drawString(tbuf, RP_XC, 250);
+        tft.drawString(tbuf, RIGHT_CONTENT_CENTER_X, STATUS_VALUE_Y);
         s_prev.remaining = rem;
     }
-
+    
     // ── Z position ───────────────────────────────────
     long posZ100 = (long)(state.posZ * 100.0f);
     if (posZ100 != s_prev.posZ100) {
@@ -211,8 +213,44 @@ static void drawDynamic(const PrinterState& state) {
         tft.setTextFont(2);
         tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
         tft.setTextDatum(MR_DATUM);
-        tft.drawString(buf, RP_XF, 250);
+        tft.drawString(buf, RIGHT_CONTENT_FINAL_X, STATUS_VALUE_Y);
         s_prev.posZ100 = posZ100;
+    }
+    
+    // ── Fan ─────────────────────────────────────────
+    int fanPct = (int)(state.fanSpeed * 100);
+    if (fanPct != s_prev.fanPct) {
+        snprintf(buf, sizeof(buf), "%s %3d%%", L.LBL_FAN, fanPct);
+        tft.fillRect(FAN_X, FAN_Y - 1, COLUMN_HALF_BOX_W, 18, COLOR_SURFACE);
+        tft.setTextFont(2);
+        tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
+        tft.setCursor(FAN_X, FAN_Y);
+        tft.print(buf);
+        s_prev.fanPct = fanPct;
+    }
+
+    // ── Thumbnail (right panel, above filename) ───────
+    bool printing = (state.status == PrinterStatus::PRINTING ||
+                     state.status == PrinterStatus::PAUSED   ||
+                     state.status == PrinterStatus::COMPLETE);
+    if (printing) {
+        if (strncmp(state.filename, s_prev.thumbFilename,
+                    sizeof(s_prev.thumbFilename)) != 0) {
+            Thumbnail::drawOrPlaceholder(
+                state.thumbnailPath,
+                RIGHT_CONTENT_X, TOP_INNER_Y, HALF_BOX_W, HALF_BOX_H);
+            strlcpy(s_prev.thumbFilename, state.filename,
+                    sizeof(s_prev.thumbFilename));
+            s_prev.thumbShown = true;
+        }
+    } else {
+        if (state.status != s_prev.status ||
+                s_prev.thumbShown ||
+                s_prev.thumbFilename[0] == '\x01') {
+            Thumbnail::drawStandby(RIGHT_CONTENT_X, TOP_INNER_Y, HALF_BOX_W, HALF_BOX_H);
+            s_prev.thumbFilename[0] = '\0';
+            s_prev.thumbShown       = false;
+        }
     }
 }
 
@@ -230,13 +268,16 @@ void resetInitialized() {
     s_prev.bedTemp        = -9999;
     s_prev.bedTarget      = -9999;
     s_prev.bedAtTemp      = false;
+    // g_hotendGraph and g_bedGraph are global – history is preserved across screen switches.
     s_prev.fanPct         = -1;
     s_prev.status         = PrinterStatus::DISCONNECTED;
-    s_prev.filename[0]    = '\x01';
-    s_prev.progressPer10  = -1;
-    s_prev.printDuration  = -1;
-    s_prev.remaining      = -1;
-    s_prev.posZ100        = -999999;
+    s_prev.filename[0]      = '\x01';
+    s_prev.progressPer10    = -1;
+    s_prev.printDuration    = -1;
+    s_prev.remaining        = -1;
+    s_prev.posZ100          = -999999;
+    s_prev.thumbFilename[0] = '\x01';
+    s_prev.thumbShown       = false;
 }
 
 void draw(const PrinterState& state) {
@@ -248,14 +289,22 @@ void draw(const PrinterState& state) {
 }
 
 ScreenID handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client) {
-    (void)x; (void)y; (void)state; (void)client;
 
-    // reset firmware button
-    if(x >= RF_X && x <= RF_X + RB_W && y >= RB_Y && y <= RB_Y + RB_H) {
+    if (inRect(x, y, BTN_RESTART.x, BTN_RESTART.y, BTN_RESTART.w, BTN_RESTART.h)) {
         client.firmwareRestart();
+        return ScreenID::HOME;
+    }
+
+    bool active = (state.status == PrinterStatus::PRINTING ||
+                   state.status == PrinterStatus::PAUSED);
+
+    if (!active &&
+        inRect(x, y, RIGHT_CONTENT_X, TOP_INNER_Y, HALF_BOX_W, HALF_BOX_H)) {
+        ScreenFiles::setPreviousScreen(ScreenID::HOME);
+        return ScreenID::FILES;
     }
 
     return ScreenID::HOME;
 }
 
-} // namespace ScreenHome
+}

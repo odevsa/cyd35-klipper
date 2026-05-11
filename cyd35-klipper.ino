@@ -10,20 +10,27 @@
 #include <WiFi.h>
 
 #include "config.h"
+#include "lang.h"
 #include "printer_state.h"
-#include "ui_theme.h"        // also declares extern TFT_eSPI tft
+#include "ui_theme.h"
 #include "moonraker.h"
 #include "screen_manager.h"
+#include "temp_graph.h"
 
 // ── Global singletons ────────────────────────────────
 // tft is declared extern in ui_theme.h; defined here.
 TFT_eSPI        tft       = TFT_eSPI();
 
+// Temperature history – shared across all screens.
+TempGraph g_hotendGraph;
+TempGraph g_bedGraph;
+
 PrinterState    g_state;
 MoonrakerClient g_moonraker(MOONRAKER_HOST, MOONRAKER_PORT);
 ScreenManager   g_screenMgr;
 
-static unsigned long s_lastPoll = 0;
+static unsigned long s_lastPoll    = 0;
+static bool          s_wasTouching = false;
 
 // ─────────────────────────────────────────────────────
 // WiFi helpers
@@ -33,7 +40,7 @@ static void showConnecting() {
     tft.setTextFont(2);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(COLOR_TEXT, COLOR_BG);
-    tft.drawString("Connecting to WiFi...", SCREEN_W / 2, SCREEN_H / 2 - 20);
+    tft.drawString(L.MSG_WIFI_CONNECTING, SCREEN_W / 2, SCREEN_H / 2 - 20);
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
     tft.drawString(WIFI_SSID, SCREEN_W / 2, SCREEN_H / 2 + 8);
 }
@@ -61,7 +68,7 @@ static void connectWiFi() {
 
     if (WiFi.status() != WL_CONNECTED) {
         tft.setTextColor(COLOR_ERROR, COLOR_BG);
-        tft.drawString("WiFi failed - running offline", SCREEN_W / 2, SCREEN_H / 2 + 60);
+        tft.drawString(L.MSG_WIFI_FAILED, SCREEN_W / 2, SCREEN_H / 2 + 60);
         delay(2000);
     }
 }
@@ -73,10 +80,35 @@ static void ensureWiFi() {
 }
 
 // ─────────────────────────────────────────────────────
+// Debug serial command handler
+// Reads lines from Serial and dispatches known commands.
+// ─────────────────────────────────────────────────────
+#ifdef DEBUG
+static String s_serialBuf;
+
+static void handleSerialCommands() {
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\n' || c == '\r') {
+            s_serialBuf.trim();
+            if (s_serialBuf == "screenshot") {
+                screenshotToSerialMonitor();
+            }
+            s_serialBuf = "";
+        } else {
+            s_serialBuf += c;
+        }
+    }
+}
+#endif
+
+// ─────────────────────────────────────────────────────
 // Arduino entry points
 // ─────────────────────────────────────────────────────
 void setup() {
-    Serial.begin(115200);
+#ifdef DEBUG
+    Serial.begin(921600);
+#endif
 
     // Backlight (keep identical to original project)
     pinMode(TFT_BL_PIN, OUTPUT);
@@ -108,8 +140,16 @@ void loop() {
     uint16_t tx, ty;
     if (tft.getTouch(&tx, &ty, TOUCH_PRESSURE)) {
         g_screenMgr.handleTouch((int)tx, (int)ty, g_state, g_moonraker);
+        s_wasTouching = true;
         delay(150);   // simple debounce
+    } else if (s_wasTouching) {
+        s_wasTouching = false;
+        g_screenMgr.handleRelease(g_state, g_moonraker);
     }
+
+#ifdef DEBUG
+    handleSerialCommands();
+#endif
 
     // ── Render ──────────────────────────────────────
     g_screenMgr.draw(g_state);
