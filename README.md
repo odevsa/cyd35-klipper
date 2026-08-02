@@ -6,6 +6,9 @@ A simple Klipper Monitor for CYD 3.5" Resistive using Moonraker.
 
 - Display : ST7796 480×320
 - Touch : XPT2046 resistive
+- [Conections](assets/connections.png)
+
+![board](assets/board.png)
 
 ## Screenshots
 
