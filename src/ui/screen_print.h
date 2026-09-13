@@ -1,10 +1,10 @@
 #pragma once
 #include "screen_manager.h"
-#include "printer_state.h"
-#include "moonraker.h"
+#include "../core/printer_state.h"
+#include "../core/moonraker.h"
 
-// Dashboard: temperatures (left) + print status (right)
-namespace ScreenHome {
+// Print job overview: progress, time, and job controls
+namespace ScreenPrint {
     void      resetInitialized();
     void      draw(const PrinterState& state);
     ScreenID  handleTouch(int x, int y, PrinterState& state, MoonrakerClient& client);

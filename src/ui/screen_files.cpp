@@ -1,7 +1,7 @@
 #include "screen_files.h"
-#include "lang.h"
+#include "../i18n/lang.h"
 #include "ui_theme.h"
-#include "thumbnail.h"
+#include "../gfx/thumbnail.h"
 
 extern MoonrakerClient g_moonraker;
 

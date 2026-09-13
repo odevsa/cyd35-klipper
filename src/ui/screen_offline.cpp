@@ -1,5 +1,5 @@
 #include "screen_offline.h"
-#include "lang.h"
+#include "../i18n/lang.h"
 #include "ui_theme.h"
 
 static bool s_initialized = false;

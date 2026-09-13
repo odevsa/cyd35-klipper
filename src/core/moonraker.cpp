@@ -1,5 +1,5 @@
 #include "moonraker.h"
-#include "config.h"
+#include "../../config.h"
 #ifdef DEBUG
 #include <Arduino.h>
 #endif

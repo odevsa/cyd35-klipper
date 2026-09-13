@@ -1,5 +1,5 @@
 #include "screen_temps.h"
-#include "lang.h"
+#include "../i18n/lang.h"
 #include "ui_theme.h"
 #include "temp_graph.h"
 

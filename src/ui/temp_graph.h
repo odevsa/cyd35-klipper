@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────
 
 #include <stdint.h>
-#include "config.h"
+#include "../../config.h"
 #include "ui_theme.h"
 
 // Hotend graph colours

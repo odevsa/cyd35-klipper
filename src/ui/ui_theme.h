@@ -1,7 +1,7 @@
 #pragma once
 #include <TFT_eSPI.h>
-#include "printer_state.h"
-#include "config.h"
+#include "../core/printer_state.h"
+#include "../../config.h"
 
 // ─────────────────────────────────────────────────────
 // Display geometry (landscape, rotation = 1)

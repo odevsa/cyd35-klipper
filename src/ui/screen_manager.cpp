@@ -1,6 +1,6 @@
-#include "config.h"
+#include "../../config.h"
 #include "screen_manager.h"
-#include "lang.h"
+#include "../i18n/lang.h"
 #include "ui_theme.h"
 #include "screen_home.h"
 #include "screen_print.h"

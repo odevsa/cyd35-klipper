@@ -1,6 +1,6 @@
 #include "screen_print.h"
-#include "lang.h"
-#include "thumbnail.h"
+#include "../i18n/lang.h"
+#include "../gfx/thumbnail.h"
 #include "ui_theme.h"
 #include "screen_files.h"
 

@@ -1,6 +1,6 @@
 #pragma once
-#include "printer_state.h"
-#include "moonraker.h"
+#include "../core/printer_state.h"
+#include "../core/moonraker.h"
 
 // ─────────────────────────────────────────────────────
 // Available screens

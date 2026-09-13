@@ -5,7 +5,7 @@
 // No interlace support (Adam7).  Filter types 0-4 supported.
 // ─────────────────────────────────────────────────────
 #include "upng.h"
-#include "config.h"
+#include "../../config.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>

@@ -1,5 +1,5 @@
 #include "screen_move.h"
-#include "lang.h"
+#include "../i18n/lang.h"
 #include "ui_theme.h"
 
 static const int LEFT_DIVIDER_X =           260;

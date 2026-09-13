@@ -10,12 +10,12 @@
 #include <WiFi.h>
 
 #include "config.h"
-#include "lang.h"
-#include "printer_state.h"
-#include "ui_theme.h"
-#include "moonraker.h"
-#include "screen_manager.h"
-#include "temp_graph.h"
+#include "src/i18n/lang.h"
+#include "src/core/printer_state.h"
+#include "src/ui/ui_theme.h"
+#include "src/core/moonraker.h"
+#include "src/ui/screen_manager.h"
+#include "src/ui/temp_graph.h"
 
 // ── Global singletons ────────────────────────────────
 // tft is declared extern in ui_theme.h; defined here.

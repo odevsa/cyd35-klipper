@@ -1,8 +1,8 @@
 #include "thumbnail.h"
 #include "upng.h"
-#include "lang.h"
-#include "ui_theme.h"
-#include "config.h"
+#include "../i18n/lang.h"
+#include "../ui/ui_theme.h"
+#include "../../config.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <ctype.h>

@@ -1,7 +1,7 @@
 #include "screen_home.h"
 #include "screen_files.h"
-#include "lang.h"
-#include "thumbnail.h"
+#include "../i18n/lang.h"
+#include "../gfx/thumbnail.h"
 #include "ui_theme.h"
 #include "temp_graph.h"
 

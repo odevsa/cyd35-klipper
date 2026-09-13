@@ -1,7 +1,7 @@
 #pragma once
 #include "screen_manager.h"
-#include "printer_state.h"
-#include "moonraker.h"
+#include "../core/printer_state.h"
+#include "../core/moonraker.h"
 
 // ─────────────────────────────────────────────────────
 // File-manager overlay: browse gcodes folders, preview

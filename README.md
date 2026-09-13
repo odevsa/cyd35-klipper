@@ -51,7 +51,7 @@ pip install pyserial
 With the device connected and the firmware running, execute:
 
 ```bash
-python screenshot.py /dev/ttyUSB0 921600 folder/screenshot.png
+python tools/screenshot.py /dev/ttyUSB0 921600 folder/screenshot.png
 ```
 
 Replace the port according to your system (`COM3` on Windows, `/dev/ttyUSB0` on Linux/macOS). The filename is optional — if omitted, a timestamp will be used.

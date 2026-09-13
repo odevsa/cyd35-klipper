@@ -11,7 +11,7 @@
 // because TFT_eSPI fonts only cover the Latin-1 range.
 // ─────────────────────────────────────────────────────
 
-#include "printer_state.h"
+#include "../core/printer_state.h"
 
 struct LangStrings {
     // Navigation bar
