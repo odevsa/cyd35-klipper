@@ -120,6 +120,13 @@ void setup() {
 
     connectWiFi();
 
+#ifdef DEBUG
+    Serial.print("[WiFi] MAC address : ");
+    Serial.println(WiFi.macAddress());
+    Serial.print("[WiFi] IP address  : ");
+    Serial.println(WiFi.localIP());
+#endif
+
     // First data fetch
     g_moonraker.update(g_state);
     s_lastPoll = millis();
